@@ -10,17 +10,24 @@ export const OverviewView = ({ setActive }) => {
   const [reminders, setReminders] = useState([]);
 
   const load = useCallback(async () => {
-    const [s, t, r] = await Promise.all([endpoints.stats(), endpoints.tickets({}), endpoints.reminders()]);
-    setStats(s.data);
-    setTickets(t.data.slice(0, 6));
-    setReminders(r.data.filter((x) => !x.done).slice(0, 4));
+    try {
+      const [s, t, r] = await Promise.all([endpoints.stats(), endpoints.tickets({}), endpoints.reminders()]);
+      setStats(s.data && typeof s.data === "object" && s.data.by_status ? s.data : null);
+      setTickets(Array.isArray(t.data) ? t.data.slice(0, 6) : []);
+      setReminders(Array.isArray(r.data) ? r.data.filter((x) => !x.done).slice(0, 4) : []);
+    } catch {
+      setStats(null);
+      setTickets([]);
+      setReminders([]);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
   if (!stats) return <div className="text-slate-400">Chargement...</div>;
 
-  const maxStatus = Math.max(...Object.values(stats.by_status), 1);
+  const statusMap = stats.by_status || {};
+  const maxStatus = Math.max(...Object.values(statusMap), 1);
 
   return (
     <div className="animate-fade-up space-y-6">
@@ -60,7 +67,7 @@ export const OverviewView = ({ setActive }) => {
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-5">
             <h3 className="font-semibold text-slate-800 mb-4">Répartition par statut</h3>
             <div className="space-y-3">
-              {Object.entries(stats.by_status).map(([s, n]) => (
+              {Object.entries(statusMap).map(([s, n]) => (
                 <div key={s}>
                   <div className="flex justify-between text-xs mb-1"><span className="text-slate-600">{s}</span><span className="font-semibold text-slate-800 tabular-nums">{n}</span></div>
                   <div className="h-2 rounded-full bg-slate-100 overflow-hidden"><div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${(n / maxStatus) * 100}%` }} /></div>

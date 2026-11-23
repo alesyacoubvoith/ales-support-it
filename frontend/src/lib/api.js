@@ -1,6 +1,7 @@
 import axios from "axios";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "";
+const rawBackendUrl = process.env.REACT_APP_BACKEND_URL || "";
+const BACKEND_URL = /^https?:\/\//i.test(rawBackendUrl) ? rawBackendUrl.replace(/\/+$/, "") : "";
 export const API = `${BACKEND_URL}/api`;
 export const FILE_BASE = BACKEND_URL;
 

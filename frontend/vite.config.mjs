@@ -9,7 +9,8 @@ function jsxInJs() {
     enforce: "pre",
     async transform(code, id) {
       const [file] = id.split("?");
-      if (!/\/src\/.*\.js$/.test(file) || file.includes("/node_modules/")) return null;
+      const normalized = file.replace(/\\/g, "/");
+      if (!/\/src\/.*\.js$/.test(normalized) || normalized.includes("/node_modules/")) return null;
       return transformWithOxc(code, file, { lang: "jsx", jsx: { runtime: "automatic" } });
     },
   };
@@ -24,11 +25,16 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
     ],
     envPrefix: ["VITE_", "REACT_APP_"],
-    define: Object.fromEntries(
-      Object.entries(env)
-        .filter(([key]) => key.startsWith("REACT_APP_"))
-        .map(([key, value]) => [`process.env.${key}`, JSON.stringify(value)]),
-    ),
+    define: {
+      ...Object.fromEntries(
+        Object.entries(env)
+          .filter(([key]) => key.startsWith("REACT_APP_"))
+          .map(([key, value]) => [`process.env.${key}`, JSON.stringify(value)]),
+      ),
+      "process.env.REACT_APP_BACKEND_URL": JSON.stringify(
+        /^https?:\/\//i.test(env.REACT_APP_BACKEND_URL || "") ? env.REACT_APP_BACKEND_URL.replace(/\/+$/, "") : ""
+      ),
+    },
     resolve: {
       alias: [{ find: "@", replacement: path.resolve(__dirname, "./src") }],
     },

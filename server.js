@@ -871,12 +871,21 @@ app.use("/api", api);
 
 // Serve built frontend static assets
 const buildDir = path.join(__dirname, "frontend", "build");
-app.use(express.static(buildDir));
+app.use(
+  express.static(buildDir, {
+    setHeaders(res, filePath) {
+      if (filePath.endsWith("index.html")) {
+        res.setHeader("Cache-Control", "no-store");
+      }
+    },
+  })
+);
 
 app.get("*", (req, res) => {
-  if (req.path.startsWith("/api")) {
-    return res.status(404).json({ detail: "Route introuvable" });
+  if (req.path.startsWith("/api") || req.path.startsWith("/assets/")) {
+    return res.status(404).json({ detail: "Ressource introuvable" });
   }
+  res.setHeader("Cache-Control", "no-store");
   res.sendFile(path.join(buildDir, "index.html"));
 });
 
