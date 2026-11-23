@@ -1,0 +1,387 @@
+import { useState, useEffect, useCallback, useRef } from "react";
+import { endpoints } from "@/lib/api";
+import { formatDate, daysUntil } from "@/lib/ui";
+import { useAuth } from "@/context/AuthContext";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { toast } from "sonner";
+import { MonitorSmartphone, Monitor, Printer, Tablet, Download, Upload, Plus, Pencil, Trash2, Cpu } from "lucide-react";
+
+const TYPE_ICON = { Ordinateur: Monitor, Imprimante: Printer, Tablette: Tablet };
+const STATUS_STYLES = {
+  "En service": "bg-emerald-50 text-emerald-700 border-emerald-200",
+  "En stock": "bg-blue-50 text-blue-700 border-blue-200",
+  "En panne": "bg-rose-50 text-rose-700 border-rose-200",
+  "Réformé": "bg-slate-100 text-slate-600 border-slate-200",
+};
+const emptyForm = {
+  name: "",
+  type: "Ordinateur",
+  imo: "",
+  brand: "",
+  model: "",
+  serial: "",
+  assigned_to: "",
+  status: "En service",
+  purchase_date: "",
+  warranty_end: "",
+  notes: "",
+};
+
+export const ParcView = () => {
+  const { isAdmin, user } = useAuth();
+  const canManageParc = isAdmin || Boolean(user?.can_access_parc);
+  const [assets, setAssets] = useState([]);
+  const [meta, setMeta] = useState({ asset_types: [], asset_statuses: [] });
+  const [tab, setTab] = useState("Tous");
+  const [modal, setModal] = useState(null);
+  const [form, setForm] = useState(emptyForm);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const load = useCallback(async () => {
+    const r = await endpoints.assets();
+    setAssets(r.data);
+  }, []);
+
+  useEffect(() => {
+    load();
+    endpoints.meta().then((r) => setMeta(r.data)).catch(() => {});
+  }, [load]);
+
+  const tabs = ["Tous", "Ordinateur", "Imprimante", "Tablette"];
+  const shown = tab === "Tous" ? assets : assets.filter((a) => a.type === tab);
+  const countBy = (t) => assets.filter((a) => a.type === t).length;
+
+  const openAdd = () => { setForm(emptyForm); setModal({ mode: "add" }); };
+  const openEdit = (a) => {
+    setForm({
+      ...a,
+      imo: a.imo || "",
+      purchase_date: a.purchase_date || "",
+      warranty_end: a.warranty_end || "",
+      brand: a.brand || "",
+      model: a.model || "",
+      serial: a.serial || "",
+      assigned_to: a.assigned_to || "",
+      notes: a.notes || "",
+    });
+    setModal({ mode: "edit", item: a });
+  };
+
+  const save = async () => {
+    if (!form.name.trim()) return toast.error("Le nom est obligatoire");
+    const payload = {
+      ...form,
+      purchase_date: form.purchase_date || null,
+      warranty_end: form.warranty_end || null,
+    };
+    try {
+      if (modal.mode === "add") { await endpoints.createAsset(payload); toast.success("Matériel ajouté"); }
+      else { await endpoints.updateAsset(modal.item.id, payload); toast.success("Matériel modifié"); }
+      setModal(null); load();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Erreur"); }
+  };
+
+  const remove = async (a) => {
+    try {
+      await endpoints.deleteAsset(a.id);
+      toast.success("Matériel supprimé");
+      load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Suppression impossible");
+    }
+  };
+
+  const exportExcel = async () => {
+    setExporting(true);
+    try {
+      const res = await endpoints.exportAssets();
+      const url = URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "parc-informatique.xlsx";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Export Excel téléchargé");
+    } catch {
+      toast.error("Export impossible");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const importCsv = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const content = (await file.text()).replace(/^\uFEFF/, "");
+      const lines = content.split(/\r?\n/).filter((line) => line.trim());
+
+      if (lines.length < 2) {
+        toast.error("Le fichier CSV est vide.");
+        return;
+      }
+
+      const separator = lines[0].includes(";") ? ";" : ",";
+      const headers = lines[0].split(separator).map((h) => h.trim().toLowerCase());
+
+      const findColumn = (...names) =>
+        headers.findIndex((h) => names.includes(h));
+
+      const nameIndex = findColumn("nom", "nom / réf", "nomref", "reference");
+
+      if (nameIndex === -1) {
+        toast.error("La colonne Nom est introuvable dans le fichier.");
+        return;
+      }
+
+      setImporting(true);
+      let count = 0;
+
+      for (const line of lines.slice(1)) {
+        const values = line.split(separator).map((v) => v.trim());
+        const get = (...names) => {
+          const index = findColumn(...names);
+          return index >= 0 ? values[index] || "" : "";
+        };
+
+        const name = values[nameIndex];
+        if (!name) continue;
+
+        await endpoints.createAsset({
+          name,
+          type: get("type") || "Ordinateur",
+          imo: get("imo", "code imo", "n° imo"),
+          brand: get("marque"),
+          model: get("modèle", "modele"),
+          serial: get("n° série", "n serie", "numero de serie", "serial"),
+          assigned_to: get("affecté à", "affecte a", "assigned_to"),
+          status: get("statut", "status") || "En service",
+          purchase_date: get("date d'achat", "date achat", "purchase_date") || null,
+          warranty_end: get("fin de garantie", "garantie", "warranty_end") || null,
+          notes: get("remarques", "remarque", "notes"),
+        });
+
+        count++;
+      }
+
+      toast.success(`${count} matériel(s) importé(s) !`);
+      load();
+    } catch {
+      toast.error("Erreur pendant l'importation du fichier CSV.");
+    } finally {
+      setImporting(false);
+      event.target.value = "";
+    }
+  };
+
+  return (
+    <div className="animate-fade-up">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+        <div>
+          <h2 className="font-display text-2xl font-bold text-slate-900">Parc informatique</h2>
+          <p className="text-sm text-slate-500">{assets.length} matériels · ordinateurs, imprimantes, tablettes</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {isAdmin && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                onChange={importCsv}
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importing}
+                className="h-10 px-3.5 rounded-lg border border-slate-200 bg-white text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors flex items-center gap-2 disabled:opacity-60"
+              >
+                <Upload className="h-4 w-4" />
+                {importing ? "Importation..." : "Importer CSV"}
+              </button>
+            </>
+          )}
+          <button data-testid="export-parc-button" onClick={exportExcel} disabled={exporting} className="h-10 px-4 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 text-sm font-semibold hover:bg-emerald-100 active:scale-[0.98] transition-colors flex items-center gap-2 disabled:opacity-60">
+            <Download className="h-4 w-4" /> Exporter Excel
+          </button>
+          {canManageParc && (
+            <button data-testid="add-asset-button" onClick={openAdd} className="h-10 px-4 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 active:scale-[0.98] transition-colors flex items-center gap-2">
+              <Plus className="h-4 w-4" /> Ajouter
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex gap-1.5 mb-4 overflow-x-auto">
+        {tabs.map((t) => {
+          const Icon = TYPE_ICON[t] || Cpu;
+          const active = tab === t;
+          return (
+            <button key={t} data-testid={`parc-tab-${t}`} onClick={() => setTab(t)} className={`h-9 px-3.5 rounded-lg text-sm font-medium whitespace-nowrap flex items-center gap-2 border transition-colors ${active ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}`}>
+              {t !== "Tous" && <Icon className="h-4 w-4" />}
+              {t === "Tous" ? "Tous" : t}
+              <span className={`text-xs tabular-nums ${active ? "text-blue-100" : "text-slate-400"}`}>{t === "Tous" ? assets.length : countBy(t)}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider">
+                <th className="text-left font-semibold py-3.5 px-4">Matériel</th>
+                <th className="text-left font-semibold py-3.5 px-4 hidden sm:table-cell">IMO</th>
+                <th className="text-left font-semibold py-3.5 px-4 hidden md:table-cell">Marque / Modèle</th>
+                <th className="text-left font-semibold py-3.5 px-4 hidden lg:table-cell">N° série</th>
+                <th className="text-left font-semibold py-3.5 px-4">Affecté à</th>
+                <th className="text-left font-semibold py-3.5 px-4 hidden lg:table-cell">Fin de garantie</th>
+                <th className="text-left font-semibold py-3.5 px-4 hidden xl:table-cell">Remarques</th>
+                <th className="text-left font-semibold py-3.5 px-4">Statut</th>
+                {canManageParc && <th className="text-right font-semibold py-3.5 px-4">Actions</th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {shown.map((a) => {
+                const Icon = TYPE_ICON[a.type] || Cpu;
+                const warrantyDays = daysUntil(a.warranty_end);
+                const warrantyTone =
+                  warrantyDays === null
+                    ? "text-slate-400"
+                    : warrantyDays < 0
+                    ? "text-rose-600 font-medium"
+                    : warrantyDays <= 30
+                    ? "text-amber-600 font-medium"
+                    : "text-slate-600";
+                return (
+                  <tr key={a.id} data-testid={`asset-row-${a.id}`} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2.5">
+                        <div className="h-8 w-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center"><Icon className="h-4 w-4" /></div>
+                        <div>
+                          <div className="font-medium text-slate-800">{a.name}</div>
+                          <div className="text-xs text-slate-400">{a.type}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 hidden sm:table-cell font-mono text-xs text-slate-600">{a.imo || "—"}</td>
+                    <td className="py-3 px-4 hidden md:table-cell text-slate-600">{[a.brand, a.model].filter(Boolean).join(" ") || "—"}</td>
+                    <td className="py-3 px-4 hidden lg:table-cell font-mono text-xs text-slate-500">{a.serial || "—"}</td>
+                    <td className="py-3 px-4 text-slate-600">{a.assigned_to || "—"}</td>
+                    <td className={`py-3 px-4 hidden lg:table-cell text-xs ${warrantyTone}`}>
+                      {a.warranty_end ? formatDate(a.warranty_end) : "—"}
+                    </td>
+                    <td className="py-3 px-4 hidden xl:table-cell text-xs text-slate-500 max-w-[180px] truncate" title={a.notes}>
+                      {a.notes || "—"}
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[a.status] || "bg-slate-100 text-slate-600 border-slate-200"}`}>{a.status}</span>
+                    </td>
+                    {canManageParc && (
+                      <td className="py-3 px-4">
+                        <div className="flex items-center justify-end gap-1">
+                          <button data-testid={`edit-asset-${a.id}`} onClick={() => openEdit(a)} title="Modifier" className="h-8 w-8 rounded-md flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"><Pencil className="h-4 w-4" /></button>
+                          {isAdmin && (
+                            <button data-testid={`delete-asset-${a.id}`} onClick={() => remove(a)} title="Supprimer" className="h-8 w-8 rounded-md flex items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"><Trash2 className="h-4 w-4" /></button>
+                          )}
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+              {shown.length === 0 && (
+                <tr><td colSpan={canManageParc ? 9 : 8} className="py-16 text-center text-slate-400">
+                  <MonitorSmartphone className="h-8 w-8 mx-auto mb-2 text-slate-300" />Aucun matériel
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <Dialog open={!!modal} onOpenChange={(o) => !o && setModal(null)}>
+        <DialogContent className="bg-white sm:max-w-lg" data-testid="asset-modal">
+          <DialogHeader><DialogTitle className="font-display text-xl">{modal?.mode === "add" ? "Ajouter un matériel" : "Modifier le matériel"}</DialogTitle></DialogHeader>
+          <div className="space-y-3 mt-1 max-h-[65vh] overflow-y-auto pr-1">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs uppercase tracking-wider font-semibold text-slate-500">Nom / Réf</label>
+                <input data-testid="asset-name-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="PC-BUREAU-204" className="mt-1.5 w-full h-10 rounded-lg border border-slate-200 px-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-wider font-semibold text-slate-500">Type</label>
+                <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
+                  <SelectTrigger data-testid="asset-type-select" className="mt-1.5 bg-white"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-white border border-slate-200 shadow-lg z-50">
+                    {meta.asset_types.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs uppercase tracking-wider font-semibold text-slate-500">IMO</label>
+                <input data-testid="asset-imo-input" value={form.imo} onChange={(e) => setForm({ ...form, imo: e.target.value })} placeholder="IMO-2025-001" className="mt-1.5 w-full h-10 rounded-lg border border-slate-200 px-3 text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-wider font-semibold text-slate-500">N° série</label>
+                <input data-testid="asset-serial-input" value={form.serial} onChange={(e) => setForm({ ...form, serial: e.target.value })} className="mt-1.5 w-full h-10 rounded-lg border border-slate-200 px-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs uppercase tracking-wider font-semibold text-slate-500">Marque</label>
+                <input data-testid="asset-brand-input" value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} placeholder="Dell" className="mt-1.5 w-full h-10 rounded-lg border border-slate-200 px-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-wider font-semibold text-slate-500">Modèle</label>
+                <input data-testid="asset-model-input" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder="OptiPlex 7090" className="mt-1.5 w-full h-10 rounded-lg border border-slate-200 px-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs uppercase tracking-wider font-semibold text-slate-500">Affecté à</label>
+                <input data-testid="asset-assigned-input" value={form.assigned_to} onChange={(e) => setForm({ ...form, assigned_to: e.target.value })} placeholder="Marie Dupont" className="mt-1.5 w-full h-10 rounded-lg border border-slate-200 px-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-wider font-semibold text-slate-500">Statut</label>
+                <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
+                  <SelectTrigger data-testid="asset-status-select" className="mt-1.5 bg-white"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-white border border-slate-200 shadow-lg z-50">
+                    {meta.asset_statuses.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs uppercase tracking-wider font-semibold text-slate-500">Date d'achat</label>
+                <input data-testid="asset-date-input" type="date" value={form.purchase_date} onChange={(e) => setForm({ ...form, purchase_date: e.target.value })} className="mt-1.5 w-full h-10 rounded-lg border border-slate-200 px-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-wider font-semibold text-slate-500">Fin de garantie</label>
+                <input data-testid="asset-warranty-input" type="date" value={form.warranty_end} onChange={(e) => setForm({ ...form, warranty_end: e.target.value })} className="mt-1.5 w-full h-10 rounded-lg border border-slate-200 px-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-wider font-semibold text-slate-500">Remarques</label>
+              <textarea data-testid="asset-notes-input" rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Observations, état, accessoires fournis..." className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none" />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <button onClick={() => setModal(null)} className="h-10 px-4 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">Annuler</button>
+            <button data-testid="asset-save-button" onClick={save} className="h-10 px-5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 active:scale-[0.98] transition-colors">Enregistrer</button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};

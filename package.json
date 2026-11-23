@@ -1,0 +1,21 @@
+{
+  "name": "support-it-helpdesk",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "build:frontend": "npm run build --workspace=frontend",
+    "build": "npm run build:frontend",
+    "dev": "npm run build:frontend && node server.js",
+    "start": "node server.js",
+    "lint": "node --check server.js && npm run build:frontend"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1",
+    "xlsx": "^0.18.5"
+  }
+}
