@@ -1,62 +1,72 @@
 @echo off
 cd /d "%~dp0"
-title Support IT - Helpdesk & Stock
+title Support IT - Helpdesk ^& Stock
 
 echo ===============================================
 echo   Demarrage de la plateforme IT Helpdesk...
-echo   (NE FERME PAS cette fenetre pendant l'utilisation)
+echo   Ne fermez pas cette fenetre pendant l'usage.
 echo ===============================================
 echo.
 
 where node >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [ERREUR] Node.js n'est pas installe ou introuvable dans le PATH.
-    echo Telecharge et installe Node.js (version LTS^) sur : https://nodejs.org/
-    echo Puis relance ce fichier.
-    echo.
-    pause
-    exit /b 1
-)
+if errorlevel 1 goto no_node
 
-set NEED_INSTALL=0
-if not exist "node_modules\express\package.json" set NEED_INSTALL=1
-if not exist "node_modules\vite\package.json" if not exist "frontend\node_modules\vite\package.json" set NEED_INSTALL=1
+if not exist "node_modules\express\package.json" goto do_install
+if exist "node_modules\vite\package.json" goto check_build
+if exist "frontend\node_modules\vite\package.json" goto check_build
 
-if "%NEED_INSTALL%"=="1" (
-    echo Installation des dependances (premiere execution, ~1 min)...
-    call npm install --legacy-peer-deps
-    if %errorlevel% neq 0 (
-        echo.
-        echo [ERREUR] L'installation des dependances a echoue.
-        pause
-        exit /b 1
-    )
-    echo.
-)
+:do_install
+echo Installation des dependances en cours, veuillez patienter...
+call npm install --legacy-peer-deps
+if errorlevel 1 goto install_error
+echo.
 
-if not exist "frontend\build\index.html" (
-    echo Compilation de l'interface web...
-    call npm run build
-    if %errorlevel% neq 0 (
-        echo.
-        echo [ERREUR] La compilation du frontend a echoue.
-        pause
-        exit /b 1
-    )
-    echo.
-)
+:check_build
+if exist "frontend\build\index.html" goto start_server
+echo Compilation de l'interface web en cours...
+call npm run build
+if errorlevel 1 goto build_error
+echo.
 
+:start_server
 echo Demarrage du serveur sur http://localhost:3000 ...
 echo Ouvre ton navigateur sur : http://localhost:3000
 echo Appuie sur Ctrl+C ou ferme cette fenetre pour arreter.
 echo.
 
-start /b "" cmd /c "ping -n 3 127.0.0.1 >nul && start http://localhost:3000"
 node server.js
-if %errorlevel% neq 0 (
-    echo.
-    echo [ERREUR] Le serveur s'est arrete avec une erreur.
-    pause
-    exit /b 1
-)
+if errorlevel 1 goto server_error
+echo.
+echo Le serveur s'est arrete.
 pause
+exit /b 0
+
+:no_node
+echo [ERREUR] Node.js n'est pas installe ou introuvable dans le PATH.
+echo Telecharge et installe Node.js LTS sur : https://nodejs.org/
+echo Puis redemarre Windows et relance ce fichier.
+echo.
+pause
+exit /b 1
+
+:install_error
+echo.
+echo [ERREUR] L'installation des dependances a echoue.
+echo Verifie ta connexion Internet et que Node.js LTS est bien installe.
+echo.
+pause
+exit /b 1
+
+:build_error
+echo.
+echo [ERREUR] La compilation du frontend a echoue.
+echo.
+pause
+exit /b 1
+
+:server_error
+echo.
+echo [ERREUR] Le serveur s'est arrete avec une erreur.
+echo.
+pause
+exit /b 1
