@@ -889,6 +889,15 @@ app.get("*", (req, res) => {
   res.sendFile(path.join(buildDir, "index.html"));
 });
 
-app.listen(PORT, HOST, () => {
+const server = app.listen(PORT, HOST, () => {
   console.log(`Support IT server running on http://${HOST}:${PORT}`);
+});
+
+server.on("error", (err) => {
+  if (err && err.code === "EADDRINUSE") {
+    console.error(`Le port ${PORT} est déjà utilisé. Ferme l'autre fenêtre/processus ou définis PORT=3001.`);
+  } else {
+    console.error("Erreur serveur:", err);
+  }
+  process.exit(1);
 });

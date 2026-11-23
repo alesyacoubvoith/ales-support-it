@@ -18,9 +18,13 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-if not exist "node_modules" (
+set NEED_INSTALL=0
+if not exist "node_modules\express\package.json" set NEED_INSTALL=1
+if not exist "node_modules\vite\package.json" if not exist "frontend\node_modules\vite\package.json" set NEED_INSTALL=1
+
+if "%NEED_INSTALL%"=="1" (
     echo Installation des dependances (premiere execution, ~1 min)...
-    call npm install
+    call npm install --legacy-peer-deps
     if %errorlevel% neq 0 (
         echo.
         echo [ERREUR] L'installation des dependances a echoue.
@@ -47,6 +51,7 @@ echo Ouvre ton navigateur sur : http://localhost:3000
 echo Appuie sur Ctrl+C ou ferme cette fenetre pour arreter.
 echo.
 
+start /b "" cmd /c "ping -n 3 127.0.0.1 >nul && start http://localhost:3000"
 node server.js
 if %errorlevel% neq 0 (
     echo.
@@ -54,3 +59,4 @@ if %errorlevel% neq 0 (
     pause
     exit /b 1
 )
+pause
