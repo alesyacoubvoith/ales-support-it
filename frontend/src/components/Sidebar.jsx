@@ -1,5 +1,5 @@
 import { useAuth } from "@/context/AuthContext";
-import { Headset, LayoutDashboard, Ticket, Boxes, BellRing, ScrollText, PlusCircle, User, UsersRound, MonitorSmartphone, BarChart3 } from "lucide-react";
+import { Headset, LayoutDashboard, Ticket, Boxes, BellRing, ScrollText, PlusCircle, User, UsersRound, MonitorSmartphone, BarChart3, Lightbulb } from "lucide-react";
 
 const adminNav = [
   { key: "overview", label: "Tableau de bord", icon: LayoutDashboard },
@@ -7,6 +7,7 @@ const adminNav = [
   { key: "ticket_stats", label: "Stats & récurrence", icon: BarChart3 },
   { key: "inventory", label: "Gestion du stock", icon: Boxes },
   { key: "parc", label: "Parc informatique", icon: MonitorSmartphone },
+  { key: "tips", label: "ASTUCES", icon: Lightbulb },
   { key: "reminders", label: "Alertes & rappels", icon: BellRing },
   { key: "logs", label: "Logs de connexion", icon: ScrollText },
   { key: "accounts", label: "Comptes & accès", icon: UsersRound },
@@ -17,13 +18,14 @@ const parcItem = { key: "parc", label: "Parc informatique", icon: MonitorSmartph
 const employeeNav = [
   { key: "mytickets", label: "Mes tickets", icon: Ticket },
   { key: "new", label: "Nouveau ticket", icon: PlusCircle },
+  { key: "tips", label: "ASTUCES", icon: Lightbulb },
   { key: "profile", label: "Mon profil", icon: User },
 ];
 
 function buildNav(isAdmin, user) {
   if (isAdmin) return adminNav;
   const nav = [...employeeNav];
-  if (user?.can_access_parc) nav.splice(2, 0, parcItem);
+  if (user?.can_access_parc) nav.splice(3, 0, parcItem);
   return nav;
 }
 

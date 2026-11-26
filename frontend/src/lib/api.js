@@ -52,4 +52,8 @@ export const endpoints = {
   uploadFile: (formData) => api.post("/upload", formData),
   importInventory: (formData) => api.post("/inventory/import", formData),
   inventoryTemplate: () => api.get("/inventory/template", { responseType: "blob" }),
+  tips: () => api.get("/tips"),
+  createTip: (data) => api.post("/tips", data),
+  updateTip: (id, data) => api.patch(`/tips/${id}`, data),
+  deleteTip: (id) => api.delete(`/tips/${id}`),
 };

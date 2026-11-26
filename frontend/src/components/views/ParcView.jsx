@@ -5,7 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { MonitorSmartphone, Monitor, Printer, Tablet, Download, Upload, Plus, Pencil, Trash2, Cpu, Mail, Copy, ExternalLink, FileDown } from "lucide-react";
+import { MonitorSmartphone, Monitor, Printer, Tablet, Download, Upload, Plus, Pencil, Trash2, Cpu, Mail, Copy, ExternalLink, FileDown, Search, X } from "lucide-react";
 
 const TYPE_ICON = { Ordinateur: Monitor, Imprimante: Printer, Tablette: Tablet };
 const STATUS_STYLES = {
@@ -75,6 +75,7 @@ export const ParcView = () => {
   const [assets, setAssets] = useState([]);
   const [meta, setMeta] = useState({ asset_types: [], asset_statuses: [] });
   const [tab, setTab] = useState("Tous");
+  const [search, setSearch] = useState("");
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [exporting, setExporting] = useState(false);
@@ -97,7 +98,15 @@ export const ParcView = () => {
   }, [load]);
 
   const tabs = ["Tous", "Ordinateur", "Imprimante", "Tablette"];
-  const shown = tab === "Tous" ? assets : assets.filter((a) => a.type === tab);
+  const q = search.trim().toLowerCase();
+  const shown = assets.filter((a) => {
+    const okTab = tab === "Tous" || a.type === tab;
+    if (!okTab) return false;
+    if (!q) return true;
+    return [a.name, a.assigned_to, a.imo, a.brand, a.model, a.serial, a.notes]
+      .filter(Boolean)
+      .some((field) => String(field).toLowerCase().includes(q));
+  });
   const countBy = (t) => assets.filter((a) => a.type === t).length;
 
   const openAdd = () => { setForm(emptyForm); setModal({ mode: "add" }); };
@@ -346,18 +355,40 @@ export const ParcView = () => {
         </div>
       </div>
 
-      <div className="flex gap-1.5 mb-4 overflow-x-auto">
-        {tabs.map((t) => {
-          const Icon = TYPE_ICON[t] || Cpu;
-          const active = tab === t;
-          return (
-            <button key={t} data-testid={`parc-tab-${t}`} onClick={() => setTab(t)} className={`h-9 px-3.5 rounded-lg text-sm font-medium whitespace-nowrap flex items-center gap-2 border transition-colors ${active ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}`}>
-              {t !== "Tous" && <Icon className="h-4 w-4" />}
-              {t === "Tous" ? "Tous" : t}
-              <span className={`text-xs tabular-nums ${active ? "text-blue-100" : "text-slate-400"}`}>{t === "Tous" ? assets.length : countBy(t)}</span>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+        <div className="flex gap-1.5 overflow-x-auto">
+          {tabs.map((t) => {
+            const Icon = TYPE_ICON[t] || Cpu;
+            const active = tab === t;
+            return (
+              <button key={t} data-testid={`parc-tab-${t}`} onClick={() => setTab(t)} className={`h-9 px-3.5 rounded-lg text-sm font-medium whitespace-nowrap flex items-center gap-2 border transition-colors ${active ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}`}>
+                {t !== "Tous" && <Icon className="h-4 w-4" />}
+                {t === "Tous" ? "Tous" : t}
+                <span className={`text-xs tabular-nums ${active ? "text-blue-100" : "text-slate-400"}`}>{t === "Tous" ? assets.length : countBy(t)}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="relative w-full sm:w-72">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <input
+            data-testid="parc-search-input"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Rechercher un matériel ou une personne..."
+            className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-8 text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              title="Effacer la recherche"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+            >
+              <X className="h-4 w-4" />
             </button>
-          );
-        })}
+          )}
+        </div>
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">

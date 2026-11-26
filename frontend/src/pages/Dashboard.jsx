@@ -13,6 +13,7 @@ import { ParcView } from "@/components/views/ParcView";
 import { ProfileView } from "@/components/views/ProfileView";
 import { NewTicketView } from "@/components/views/NewTicketView";
 import { TicketStatsView } from "@/components/views/TicketStatsView";
+import { TipsView } from "@/components/views/TipsView";
 
 export default function Dashboard() {
   const { isAdmin } = useAuth();
@@ -30,6 +31,7 @@ export default function Dashboard() {
       case "logs": return <LogsView />;
       case "accounts": return <AccountsView />;
       case "parc": return <ParcView />;
+      case "tips": return <TipsView />;
       case "mytickets": return <TicketsView key={refreshKey} adminMode={false} />;
       case "new": return <NewTicketView onDone={() => { setRefreshKey((k) => k + 1); setActive("mytickets"); }} />;
       case "profile": return <ProfileView />;

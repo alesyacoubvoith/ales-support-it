@@ -50,6 +50,15 @@ const STOCK_CATEGORIES = [
 ];
 const ASSET_TYPES = ["Ordinateur", "Imprimante", "Tablette"];
 const ASSET_STATUSES = ["En service", "En stock", "En panne", "Réformé"];
+const TIP_TOPICS = [
+  "Matériel / PC",
+  "Réseau / Wifi",
+  "Logiciel / Licence",
+  "Imprimante / Périphérique",
+  "Accès / Identifiants",
+  "Sécurité",
+  "Autre",
+];
 
 const SEED_ADMINS = [
   { id: "EMP-ALES", name: "Ales", role: "admin", title: "Technicien Support IT", can_access_parc: true },
@@ -77,6 +86,7 @@ let DB = {
   inventory: [],
   reminders: [],
   assets: [],
+  tips: [],
   logs: [],
   files: [],
 };
@@ -241,12 +251,58 @@ function seed() {
       });
     }
   }
+
+  seedTips(base, dayMs);
+}
+
+function seedTips(base = Date.now(), dayMs = 86400 * 1000) {
+  if (DB.tips.length > 0) return;
+  const starterTips = [
+    [
+      "Se reconnecter rapidement au Wifi entreprise",
+      "Réseau / Wifi",
+      "1. Désactivez puis réactivez le Wifi depuis la barre des tâches.\n2. Si le réseau reste bloqué, cliquez sur « Oublier » sur le réseau entreprise puis reconnectez-vous avec votre identifiant Windows.\n3. En télétravail, vérifiez que le VPN est bien activé avant d'ouvrir vos dossiers partagés.",
+      5,
+    ],
+    [
+      "Débloquer une file d'attente d'impression",
+      "Imprimante / Périphérique",
+      "1. Vérifiez qu'il n'y a pas de bourrage papier dans le bac 1 ou à l'arrière.\n2. Ouvrez Paramètres > Imprimantes et scanners, sélectionnez votre imprimante puis « Ouvrir la file d'attente ».\n3. Annulez les documents bloqués et relancez l'impression.",
+      4,
+    ],
+    [
+      "Raccourcis clavier utiles & capture d'écran rapide",
+      "Matériel / PC",
+      "• Windows + Maj + S : faire une capture d'écran partielle (pratique pour joindre une erreur à un ticket).\n• Windows + L : verrouiller votre PC quand vous quittez votre poste.\n• Ctrl + Maj + Échap : ouvrir directement le Gestionnaire des tâches si un logiciel ne répond plus.",
+      2,
+    ],
+    [
+      "Vérifier un mail suspect avant de cliquer",
+      "Sécurité",
+      "1. Contrôlez toujours l'adresse exacte de l'expéditeur (pas uniquement le nom affiché).\n2. Survolez les liens sans cliquer pour vérifier le domaine.\n3. En cas de doute, ne téléchargez aucune pièce jointe et ouvrez un ticket au Support IT.",
+      1,
+    ],
+  ];
+  for (const [title, topic, content, daysAgo] of starterTips) {
+    const ts = new Date(base - daysAgo * dayMs).toISOString();
+    DB.tips.push({
+      id: newId(),
+      title,
+      topic,
+      content,
+      author_id: "EMP-ALES",
+      author_name: "Ales",
+      created_at: ts,
+      updated_at: ts,
+    });
+  }
 }
 
 function loadDB() {
   if (fs.existsSync(DB_FILE)) {
     try {
       const parsed = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+      const hasTipsKey = Array.isArray(parsed.tips);
       DB = {
         users: Array.isArray(parsed.users) ? parsed.users : [],
         tickets: Array.isArray(parsed.tickets) ? parsed.tickets : [],
@@ -254,9 +310,14 @@ function loadDB() {
         inventory: Array.isArray(parsed.inventory) ? parsed.inventory : [],
         reminders: Array.isArray(parsed.reminders) ? parsed.reminders : [],
         assets: Array.isArray(parsed.assets) ? parsed.assets : [],
+        tips: hasTipsKey ? parsed.tips : [],
         logs: Array.isArray(parsed.logs) ? parsed.logs : [],
         files: Array.isArray(parsed.files) ? parsed.files : [],
       };
+      if (!hasTipsKey) {
+        seedTips();
+        saveDB();
+      }
       return;
     } catch (e) {
       console.warn("Could not parse db.json, re-seeding:", e.message);
@@ -283,6 +344,7 @@ api.get("/meta", (_req, res) => {
     stock_categories: STOCK_CATEGORIES,
     asset_types: ASSET_TYPES,
     asset_statuses: ASSET_STATUSES,
+    tip_topics: TIP_TOPICS,
   });
 });
 
@@ -865,6 +927,83 @@ api.get("/stats", (_req, res) => {
     by_status,
     by_priority,
   });
+});
+
+// ---------------- Tips (ASTUCES) ----------------
+api.get("/tips", (_req, res) => {
+  const sorted = [...DB.tips].sort((a, b) => (b.updated_at || b.created_at || "").localeCompare(a.updated_at || a.created_at || ""));
+  res.json(sorted);
+});
+
+api.post("/tips", (req, res) => {
+  const reqUser = getReqUser(req);
+  if (!reqUser || reqUser.role !== "admin") {
+    return res.status(403).json({ detail: "Seuls les administrateurs peuvent publier des astuces" });
+  }
+  const { title = "", topic = "Autre", content = "" } = req.body || {};
+  const cleanTitle = String(title).trim();
+  const cleanTopic = String(topic || "Autre").trim() || "Autre";
+  const cleanContent = String(content).trim();
+  if (!cleanTitle || !cleanContent) {
+    return res.status(400).json({ detail: "Titre et contenu requis" });
+  }
+  const ts = nowIso();
+  const doc = {
+    id: newId(),
+    title: cleanTitle,
+    topic: cleanTopic,
+    content: cleanContent,
+    author_id: reqUser.id,
+    author_name: reqUser.name,
+    created_at: ts,
+    updated_at: ts,
+  };
+  DB.tips.unshift(doc);
+  saveDB();
+  res.json(doc);
+});
+
+api.patch("/tips/:tipId", (req, res) => {
+  const reqUser = getReqUser(req);
+  if (!reqUser || reqUser.role !== "admin") {
+    return res.status(403).json({ detail: "Seuls les administrateurs peuvent modifier des astuces" });
+  }
+  const tip = DB.tips.find((t) => t.id === req.params.tipId);
+  if (!tip) return res.status(404).json({ detail: "Astuce introuvable" });
+  const body = req.body || {};
+  let changed = false;
+  if (body.title !== undefined) {
+    const t = String(body.title).trim();
+    if (!t) return res.status(400).json({ detail: "Le titre est obligatoire" });
+    tip.title = t;
+    changed = true;
+  }
+  if (body.topic !== undefined) {
+    tip.topic = String(body.topic).trim() || "Autre";
+    changed = true;
+  }
+  if (body.content !== undefined) {
+    const c = String(body.content).trim();
+    if (!c) return res.status(400).json({ detail: "Le contenu est obligatoire" });
+    tip.content = c;
+    changed = true;
+  }
+  if (!changed) return res.status(400).json({ detail: "Aucune donnée" });
+  tip.updated_at = nowIso();
+  saveDB();
+  res.json(tip);
+});
+
+api.delete("/tips/:tipId", (req, res) => {
+  const reqUser = getReqUser(req);
+  if (!reqUser || reqUser.role !== "admin") {
+    return res.status(403).json({ detail: "Seuls les administrateurs peuvent supprimer des astuces" });
+  }
+  const idx = DB.tips.findIndex((t) => t.id === req.params.tipId);
+  if (idx === -1) return res.status(404).json({ detail: "Astuce introuvable" });
+  DB.tips.splice(idx, 1);
+  saveDB();
+  res.json({ ok: true });
 });
 
 app.use("/api", api);

@@ -513,6 +513,48 @@
       "created_at": "2026-11-23T08:59:12.421Z"
     }
   ],
+  "tips": [
+    {
+      "id": "57139269-ea3f-4bc7-a2ad-dd6fd166728f",
+      "title": "Se reconnecter rapidement au Wifi entreprise",
+      "topic": "Réseau / Wifi",
+      "content": "1. Désactivez puis réactivez le Wifi depuis la barre des tâches.\n2. Si le réseau reste bloqué, cliquez sur « Oublier » sur le réseau entreprise puis reconnectez-vous avec votre identifiant Windows.\n3. En télétravail, vérifiez que le VPN est bien activé avant d'ouvrir vos dossiers partagés.",
+      "author_id": "EMP-ALES",
+      "author_name": "Ales",
+      "created_at": "2026-11-21T10:03:18.391Z",
+      "updated_at": "2026-11-21T10:03:18.391Z"
+    },
+    {
+      "id": "5c5a8af1-081f-4de2-a513-eb506aa653ff",
+      "title": "Débloquer une file d'attente d'impression",
+      "topic": "Imprimante / Périphérique",
+      "content": "1. Vérifiez qu'il n'y a pas de bourrage papier dans le bac 1 ou à l'arrière.\n2. Ouvrez Paramètres > Imprimantes et scanners, sélectionnez votre imprimante puis « Ouvrir la file d'attente ».\n3. Annulez les documents bloqués et relancez l'impression.",
+      "author_id": "EMP-ALES",
+      "author_name": "Ales",
+      "created_at": "2026-11-22T10:03:18.391Z",
+      "updated_at": "2026-11-22T10:03:18.391Z"
+    },
+    {
+      "id": "dd782aa6-5e24-46d1-bd5c-5cc2bdf69a0b",
+      "title": "Raccourcis clavier utiles & capture d'écran rapide",
+      "topic": "Matériel / PC",
+      "content": "• Windows + Maj + S : faire une capture d'écran partielle (pratique pour joindre une erreur à un ticket).\n• Windows + L : verrouiller votre PC quand vous quittez votre poste.\n• Ctrl + Maj + Échap : ouvrir directement le Gestionnaire des tâches si un logiciel ne répond plus.",
+      "author_id": "EMP-ALES",
+      "author_name": "Ales",
+      "created_at": "2026-11-24T10:03:18.391Z",
+      "updated_at": "2026-11-24T10:03:18.391Z"
+    },
+    {
+      "id": "8ad01076-8ff9-436c-b72e-b11ac193134f",
+      "title": "Vérifier un mail suspect avant de cliquer",
+      "topic": "Sécurité",
+      "content": "1. Contrôlez toujours l'adresse exacte de l'expéditeur (pas uniquement le nom affiché).\n2. Survolez les liens sans cliquer pour vérifier le domaine.\n3. En cas de doute, ne téléchargez aucune pièce jointe et ouvrez un ticket au Support IT.",
+      "author_id": "EMP-ALES",
+      "author_name": "Ales",
+      "created_at": "2026-11-25T10:03:18.391Z",
+      "updated_at": "2026-11-25T10:03:18.391Z"
+    }
+  ],
   "logs": [
     {
       "id": "6fca2997-0c91-4053-b4c4-604daf20f217",
