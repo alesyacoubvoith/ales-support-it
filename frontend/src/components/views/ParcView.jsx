@@ -5,7 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { MonitorSmartphone, Monitor, Printer, Tablet, Download, Upload, Plus, Pencil, Trash2, Cpu } from "lucide-react";
+import { MonitorSmartphone, Monitor, Printer, Tablet, Download, Upload, Plus, Pencil, Trash2, Cpu, Mail, Copy, ExternalLink, FileDown } from "lucide-react";
 
 const TYPE_ICON = { Ordinateur: Monitor, Imprimante: Printer, Tablette: Tablet };
 const STATUS_STYLES = {
@@ -28,6 +28,47 @@ const emptyForm = {
   notes: "",
 };
 
+const toUtf8Base64 = (str) => {
+  const bytes = new TextEncoder().encode(str);
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
+};
+
+const formatAssetLines = (a) => [
+  `- Nom / Référence : ${a.name || "—"}`,
+  `- Type : ${a.type || "—"}`,
+  `- Code IMO : ${a.imo || "—"}`,
+  `- Marque / Modèle : ${[a.brand, a.model].filter(Boolean).join(" ") || "—"}`,
+  `- N° de série : ${a.serial || "—"}`,
+  `- Affecté à : ${a.assigned_to || "—"}`,
+  `- Date d'achat : ${a.purchase_date ? formatDate(a.purchase_date) : "—"}`,
+  `- Fin de garantie : ${a.warranty_end ? formatDate(a.warranty_end) : "—"}`,
+  `- Statut : Réformé`,
+  `- Remarques : ${a.notes || "—"}`,
+].join("\n");
+
+const buildReformeDraft = (items, senderName) => {
+  const list = items.filter(Boolean);
+  if (list.length === 0) {
+    return {
+      subject: "[Parc IT] Demande de réforme matériel",
+      body: `Bonjour,\n\nMerci de sélectionner un matériel à réformer.\n\nCordialement,\n${senderName || "Support IT"}`,
+    };
+  }
+  const subject =
+    list.length === 1
+      ? `[Parc IT] Réforme matériel — ${list[0].name}${list[0].imo ? ` (${list[0].imo})` : ""}`
+      : `[Parc IT] Réforme matériel (${list.length} équipements)`;
+  const intro =
+    list.length === 1
+      ? "Le matériel informatique suivant va être réformé :"
+      : `Les ${list.length} matériels informatiques suivants vont être réformés :`;
+  const details = list.map((a, idx) => (list.length > 1 ? `Matériel #${idx + 1}\n${formatAssetLines(a)}` : formatAssetLines(a))).join("\n\n");
+  const body = `Bonjour,\n\n${intro}\n\n${details}\n\nMerci de prendre en compte cette mise en réforme dans le suivi du parc.\n\nCordialement,\n${senderName || "Support IT"}`;
+  return { subject, body };
+};
+
 export const ParcView = () => {
   const { isAdmin, user } = useAuth();
   const canManageParc = isAdmin || Boolean(user?.can_access_parc);
@@ -38,6 +79,11 @@ export const ParcView = () => {
   const [form, setForm] = useState(emptyForm);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [outlookOpen, setOutlookOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [draftTo, setDraftTo] = useState("");
+  const [draftSubject, setDraftSubject] = useState("");
+  const [draftBody, setDraftBody] = useState("");
   const fileInputRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -70,7 +116,28 @@ export const ParcView = () => {
     setModal({ mode: "edit", item: a });
   };
 
-  const save = async () => {
+  const openOutlookDraft = (targetAssets) => {
+    const list = (targetAssets && targetAssets.length ? targetAssets : assets.filter((a) => a.status === "Réformé"));
+    const fallback = list.length ? list : assets.slice(0, 1);
+    const ids = fallback.map((a) => a.id).filter(Boolean);
+    setSelectedIds(ids);
+    const { subject, body } = buildReformeDraft(fallback, user?.name);
+    setDraftSubject(subject);
+    setDraftBody(body);
+    setOutlookOpen(true);
+  };
+
+  const toggleAssetInDraft = (asset) => {
+    const exists = selectedIds.includes(asset.id);
+    const nextIds = exists ? selectedIds.filter((id) => id !== asset.id) : [...selectedIds, asset.id];
+    setSelectedIds(nextIds);
+    const nextItems = assets.filter((a) => nextIds.includes(a.id));
+    const { subject, body } = buildReformeDraft(nextItems, user?.name);
+    setDraftSubject(subject);
+    setDraftBody(body);
+  };
+
+  const save = async (openDraftAfter = false) => {
     if (!form.name.trim()) return toast.error("Le nom est obligatoire");
     const payload = {
       ...form,
@@ -78,10 +145,64 @@ export const ParcView = () => {
       warranty_end: form.warranty_end || null,
     };
     try {
-      if (modal.mode === "add") { await endpoints.createAsset(payload); toast.success("Matériel ajouté"); }
-      else { await endpoints.updateAsset(modal.item.id, payload); toast.success("Matériel modifié"); }
-      setModal(null); load();
+      let savedAsset;
+      if (modal.mode === "add") {
+        const res = await endpoints.createAsset(payload);
+        savedAsset = res.data;
+        toast.success("Matériel ajouté");
+      } else {
+        const res = await endpoints.updateAsset(modal.item.id, payload);
+        savedAsset = res.data;
+        toast.success("Matériel modifié");
+      }
+      setModal(null);
+      await load();
+      if (openDraftAfter && savedAsset) {
+        const { subject, body } = buildReformeDraft([savedAsset], user?.name);
+        setSelectedIds([savedAsset.id]);
+        setDraftSubject(subject);
+        setDraftBody(body);
+        setOutlookOpen(true);
+      }
     } catch (e) { toast.error(e?.response?.data?.detail || "Erreur"); }
+  };
+
+  const cleanTo = draftTo.replace(/[\r\n]+/g, "").trim();
+  const mailtoHref = `mailto:${cleanTo}?subject=${encodeURIComponent(draftSubject)}&body=${encodeURIComponent(draftBody)}`;
+  const outlookWebProHref = `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(cleanTo)}&subject=${encodeURIComponent(draftSubject)}&body=${encodeURIComponent(draftBody)}`;
+  const outlookWebPersoHref = `https://outlook.live.com/mail/0/deeplink/compose?to=${encodeURIComponent(cleanTo)}&subject=${encodeURIComponent(draftSubject)}&body=${encodeURIComponent(draftBody)}`;
+
+  const downloadEmlDraft = () => {
+    const crlfBody = draftBody.replace(/\r?\n/g, "\r\n");
+    const eml = [
+      `To: ${cleanTo}`,
+      `Subject: =?UTF-8?B?${toUtf8Base64(draftSubject)}?=`,
+      "X-Unsent: 1",
+      "MIME-Version: 1.0",
+      "Content-Type: text/plain; charset=UTF-8",
+      "Content-Transfer-Encoding: 8bit",
+      "",
+      crlfBody,
+    ].join("\r\n");
+    const blob = new Blob([eml], { type: "message/rfc822" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "brouillon-reforme-outlook.eml";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    toast.success("Brouillon .eml téléchargé (ouvre-le avec Outlook)");
+  };
+
+  const copyDraft = async () => {
+    try {
+      await navigator.clipboard.writeText(`Objet : ${draftSubject}\n\n${draftBody}`);
+      toast.success("Contenu du brouillon copié");
+    } catch {
+      toast.error("Copie automatique impossible");
+    }
   };
 
   const remove = async (a) => {
@@ -207,6 +328,13 @@ export const ParcView = () => {
               </button>
             </>
           )}
+          <button
+            data-testid="outlook-reforme-button"
+            onClick={() => openOutlookDraft()}
+            className="h-10 px-3.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 text-sm font-semibold hover:bg-blue-100 active:scale-[0.98] transition-colors flex items-center gap-2"
+          >
+            <Mail className="h-4 w-4" /> Brouillon Outlook (Réformé)
+          </button>
           <button data-testid="export-parc-button" onClick={exportExcel} disabled={exporting} className="h-10 px-4 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 text-sm font-semibold hover:bg-emerald-100 active:scale-[0.98] transition-colors flex items-center gap-2 disabled:opacity-60">
             <Download className="h-4 w-4" /> Exporter Excel
           </button>
@@ -287,6 +415,17 @@ export const ParcView = () => {
                     {canManageParc && (
                       <td className="py-3 px-4">
                         <div className="flex items-center justify-end gap-1">
+                          {a.status === "Réformé" && (
+                            <button
+                              data-testid={`outlook-asset-${a.id}`}
+                              onClick={() => openOutlookDraft([a])}
+                              title="Créer un brouillon Outlook (réforme)"
+                              className="h-8 px-2 rounded-md flex items-center gap-1 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors"
+                            >
+                              <Mail className="h-3.5 w-3.5" />
+                              <span className="hidden 2xl:inline">Outlook</span>
+                            </button>
+                          )}
                           <button data-testid={`edit-asset-${a.id}`} onClick={() => openEdit(a)} title="Modifier" className="h-8 w-8 rounded-md flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"><Pencil className="h-4 w-4" /></button>
                           {isAdmin && (
                             <button data-testid={`delete-asset-${a.id}`} onClick={() => remove(a)} title="Supprimer" className="h-8 w-8 rounded-md flex items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"><Trash2 className="h-4 w-4" /></button>
@@ -376,9 +515,151 @@ export const ParcView = () => {
               <textarea data-testid="asset-notes-input" rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Observations, état, accessoires fournis..." className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none" />
             </div>
           </div>
+          {form.status === "Réformé" && (
+            <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50/70 px-3 py-2.5 flex items-center justify-between gap-3">
+              <div className="text-xs text-blue-800">
+                Statut <strong>Réformé</strong> sélectionné : tu peux préparer directement le mail Outlook avec les infos de ce matériel.
+              </div>
+              <button
+                type="button"
+                data-testid="modal-save-outlook-button"
+                onClick={() => save(true)}
+                className="shrink-0 h-8 px-3 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition-colors flex items-center gap-1.5"
+              >
+                <Mail className="h-3.5 w-3.5" /> Enregistrer & brouillon Outlook
+              </button>
+            </div>
+          )}
           <div className="flex justify-end gap-2 mt-4">
             <button onClick={() => setModal(null)} className="h-10 px-4 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">Annuler</button>
-            <button data-testid="asset-save-button" onClick={save} className="h-10 px-5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 active:scale-[0.98] transition-colors">Enregistrer</button>
+            <button data-testid="asset-save-button" onClick={() => save(false)} className="h-10 px-5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 active:scale-[0.98] transition-colors">Enregistrer</button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={outlookOpen} onOpenChange={setOutlookOpen}>
+        <DialogContent className="bg-white sm:max-w-2xl" data-testid="outlook-reforme-modal">
+          <DialogHeader>
+            <DialogTitle className="font-display text-xl flex items-center gap-2">
+              <Mail className="h-5 w-5 text-blue-600" />
+              Brouillon Outlook — Matériel réformé
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 mt-1 max-h-[70vh] overflow-y-auto pr-1">
+            <div>
+              <label className="text-xs uppercase tracking-wider font-semibold text-slate-500">
+                Matériel(s) inclus ({selectedIds.length})
+              </label>
+              <div className="mt-1.5 flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-2 rounded-lg border border-slate-200 bg-slate-50">
+                {assets.map((a) => {
+                  const checked = selectedIds.includes(a.id);
+                  return (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => toggleAssetInDraft(a)}
+                      className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
+                        checked
+                          ? "bg-blue-600 text-white border-blue-600"
+                          : a.status === "Réformé"
+                          ? "bg-white text-slate-700 border-amber-300 hover:bg-amber-50"
+                          : "bg-white text-slate-500 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      {a.name}{a.status === "Réformé" ? " · Réformé" : ""}
+                    </button>
+                  );
+                })}
+                {assets.length === 0 && <span className="text-xs text-slate-400">Aucun matériel dans le parc</span>}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs uppercase tracking-wider font-semibold text-slate-500">Destinataire (optionnel)</label>
+              <input
+                data-testid="outlook-to-input"
+                value={draftTo}
+                onChange={(e) => setDraftTo(e.target.value)}
+                placeholder="ex: direction@entreprise.fr, achats@entreprise.fr"
+                className="mt-1.5 w-full h-10 rounded-lg border border-slate-200 px-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs uppercase tracking-wider font-semibold text-slate-500">Objet du mail</label>
+              <input
+                data-testid="outlook-subject-input"
+                value={draftSubject}
+                onChange={(e) => setDraftSubject(e.target.value)}
+                className="mt-1.5 w-full h-10 rounded-lg border border-slate-200 px-3 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs uppercase tracking-wider font-semibold text-slate-500">Contenu du brouillon</label>
+              <textarea
+                data-testid="outlook-body-input"
+                rows={10}
+                value={draftBody}
+                onChange={(e) => setDraftBody(e.target.value)}
+                className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-mono text-slate-700 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 mt-4 pt-3 border-t border-slate-100">
+            <div className="flex flex-wrap gap-2">
+              <a
+                data-testid="outlook-mailto-link"
+                href={mailtoHref}
+                className="h-9 px-3.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition-colors inline-flex items-center gap-1.5"
+              >
+                <Mail className="h-3.5 w-3.5" /> Ouvrir dans Outlook (PC)
+              </a>
+              <a
+                data-testid="outlook-web-pro-link"
+                href={outlookWebProHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="h-9 px-3 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 text-xs font-semibold hover:bg-blue-100 transition-colors inline-flex items-center gap-1.5"
+              >
+                <ExternalLink className="h-3.5 w-3.5" /> Outlook Web (Pro)
+              </a>
+              <a
+                data-testid="outlook-web-perso-link"
+                href={outlookWebPersoHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-medium hover:bg-slate-50 transition-colors inline-flex items-center gap-1.5"
+              >
+                <ExternalLink className="h-3.5 w-3.5" /> Outlook.com
+              </a>
+              <button
+                type="button"
+                data-testid="outlook-eml-button"
+                onClick={downloadEmlDraft}
+                className="h-9 px-3 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-semibold hover:bg-emerald-100 transition-colors inline-flex items-center gap-1.5"
+              >
+                <FileDown className="h-3.5 w-3.5" /> Télécharger brouillon .eml
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                data-testid="outlook-copy-button"
+                onClick={copyDraft}
+                className="h-9 px-3 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors inline-flex items-center gap-1.5"
+              >
+                <Copy className="h-3.5 w-3.5" /> Copier
+              </button>
+              <button
+                type="button"
+                onClick={() => setOutlookOpen(false)}
+                className="h-9 px-3 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                Fermer
+              </button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
