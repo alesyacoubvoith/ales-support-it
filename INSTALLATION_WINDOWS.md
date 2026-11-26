@@ -21,10 +21,10 @@ Télécharge et installe **Node.js (version LTS)** :
    - Laisse la fenêtre noire ouverte pendant que tu utilises l'application.
 3. Ouvre ton navigateur sur :
    ```
-   http://localhost:3000
+   http://localhost:3040
    ```
 
-*(Alternative en ligne de commande dans le dossier du projet : `npm install`, puis `npm run build`, puis `npm start`.)*
+*(Alternative en ligne de commande dans le dossier du projet : `npm install`, puis `npm run build`, puis `set PORT=3040 && npm start`.)*
 
 ---
 
@@ -33,7 +33,7 @@ Télécharge et installe **Node.js (version LTS)** :
 1. Trouve ton adresse IP : ouvre `cmd`, tape `ipconfig`, et note la ligne **Adresse IPv4** (ex: `192.168.1.42`).
 2. Tes collègues (sur le même Wi-Fi / réseau) ouvrent dans leur navigateur :
    ```
-   http://192.168.1.42:3000
+   http://192.168.1.42:3040
    ```
 3. Si Windows affiche une alerte Pare-feu au 1er lancement, clique sur **Autoriser l'accès**.
 

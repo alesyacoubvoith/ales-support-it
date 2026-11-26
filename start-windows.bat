@@ -29,8 +29,9 @@ if errorlevel 1 goto build_error
 echo.
 
 :start_server
-echo Demarrage du serveur sur http://localhost:3000 ...
-echo Ouvre ton navigateur sur : http://localhost:3000
+set PORT=3040
+echo Demarrage du serveur sur http://localhost:3040 ...
+echo Ouvre ton navigateur sur : http://localhost:3040
 echo Appuie sur Ctrl+C ou ferme cette fenetre pour arreter.
 echo.
 
